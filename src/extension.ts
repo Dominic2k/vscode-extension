@@ -1,19 +1,25 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import dotenv from "dotenv";
 
-type GeminiResponse = any; // để đơn giản MVP
+/**
+ * Gemini API response type (MVP)
+ */
+type GeminiResponse = any;
 
+/**
+ * Call Gemini API to explain code
+ */
 async function callGemini(prompt: string): Promise<string> {
-    const cfg = vscode.workspace.getConfiguration("gemini");
-    const apiKey = cfg.get<string>("apiKey");
-    const model = cfg.get<string>("model") || "gemini-1.5-flash";
+    const apiKey = process.env.GEMINI_API_KEY;
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
     if (!apiKey) {
         throw new Error(
-            "Missing Gemini API key. Set it in Settings: gemini.apiKey"
+            "Missing GEMINI_API_KEY. Add it to .env in the extension project root."
         );
     }
 
-    // Gemini API endpoint (Generative Language API)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const body = {
@@ -26,7 +32,9 @@ async function callGemini(prompt: string): Promise<string> {
 
     const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
     });
 
@@ -36,6 +44,7 @@ async function callGemini(prompt: string): Promise<string> {
     }
 
     const data: GeminiResponse = await res.json();
+
     const text =
         data?.candidates?.[0]?.content?.parts
             ?.map((p: any) => p.text)
@@ -44,7 +53,21 @@ async function callGemini(prompt: string): Promise<string> {
     return text.trim() || "(No content returned)";
 }
 
+/**
+ * Extension entry point
+ */
 export function activate(context: vscode.ExtensionContext) {
+    /**
+     * Load .env from EXTENSION ROOT
+     * (same level as package.json)
+     */
+    const envPath = path.join(context.extensionPath, ".env");
+    dotenv.config({ path: envPath });
+
+    console.log("Gemini extension activated");
+    console.log("Loaded .env from:", envPath);
+    console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+
     const output = vscode.window.createOutputChannel("Gemini Explain");
 
     const disposable = vscode.commands.registerCommand(
@@ -69,7 +92,6 @@ export function activate(context: vscode.ExtensionContext) {
 
                 const lang = editor.document.languageId;
 
-                // Prompt MVP (ngắn + dễ hiểu cho team)
                 const prompt = `
 Bạn là trợ lý giải thích code cho sinh viên.
 Giải thích đoạn code sau bằng tiếng Việt, ngắn gọn, dễ hiểu:
@@ -86,8 +108,9 @@ ${selectedText}
 \`\`\`
 `.trim();
 
+                output.clear();
                 output.show(true);
-                output.appendLine("=== Explaining selection ===");
+                output.appendLine("=== Gemini Explain ===");
                 output.appendLine(`Language: ${lang}`);
                 output.appendLine("");
 
@@ -96,13 +119,12 @@ ${selectedText}
                 output.appendLine(answer);
                 output.appendLine("\n---\n");
 
-                // Optional: copy to clipboard
                 await vscode.env.clipboard.writeText(answer);
                 vscode.window.showInformationMessage(
                     "Explained! (Copied to clipboard)"
                 );
-            } catch (e: any) {
-                vscode.window.showErrorMessage(e?.message ?? String(e));
+            } catch (err: any) {
+                vscode.window.showErrorMessage(err?.message ?? String(err));
             }
         }
     );
@@ -110,4 +132,9 @@ ${selectedText}
     context.subscriptions.push(disposable, output);
 }
 
-export function deactivate() {}
+/**
+ * Extension cleanup
+ */
+export function deactivate() {
+    console.log("Gemini extension deactivated");
+}
